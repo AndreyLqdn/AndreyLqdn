@@ -6,6 +6,11 @@
 <br>
 
 <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./contributions-dark.svg">
+  <img alt="Contributions in the last year" src="./contributions-light.svg" width="100%">
+</picture>
+
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="./stack-dark.svg">
   <img alt="Tech stack: TypeScript, React, Next.js, Tailwind CSS, CSS, Figma, Storybook, Node.js, Rust, Vercel, Claude Code, Codex, GitHub, Linear, Notion. Languages across my repos, mostly TypeScript." src="./stack-light.svg" width="100%">
 </picture>

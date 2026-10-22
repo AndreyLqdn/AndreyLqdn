@@ -1,11 +1,38 @@
 // Draws the "Tech Stack & Languages" card for the profile README, in light and
-// dark (stack-light.svg, stack-dark.svg). Languages are GitHub's own byte
-// counts (linguist) summed over every repo Andrey owns or works in, team repos
-// included. Run: node scripts/generate.mjs (needs `gh` logged in).
+// dark (stack-light.svg, stack-dark.svg). Languages are measured by file type
+// (git tree sizes) over every repo Andrey owns or works in, team repos
+// included, so React (.tsx/.jsx) counts as React, not as TypeScript the way
+// GitHub's linguist stats do. Skipped: a backend that wasn't his code, and
+// generated/vendor files. Run: node scripts/generate.mjs (needs `gh` logged in).
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 
 const OWNERS = ["AndreyLqdn", "weAltura", "weAltura-old", "ValloraDK"];
+const SKIP_REPOS = ["ValloraDK/servitutter-backend"];
+const SKIP_FILES =
+  /(^|\/)(node_modules|dist|build|\.next|vendor|coverage|public|generated|__generated__|\.turbo|storybook-static)\/|\.d\.ts$|\.min\.|lock|\.map$/i;
+const EXT = {
+  tsx: "React",
+  jsx: "React",
+  ts: "TypeScript",
+  mts: "TypeScript",
+  js: "JavaScript",
+  mjs: "JavaScript",
+  cjs: "JavaScript",
+  css: "CSS",
+  scss: "CSS",
+  sql: "SQL",
+  dart: "Dart",
+  py: "Python",
+  html: "HTML",
+  mdx: "MDX",
+  swift: "Swift",
+  kt: "Kotlin",
+  rs: "Rust",
+  sh: "Shell",
+};
+// Always in the legend, even when small (the stack he designs in); the rest is Other.
+const FEATURED = ["React", "TypeScript", "CSS", "SQL", "JavaScript"];
 
 // Design-engineer stack first, then runtime/systems, then tools.
 const STACK = [
@@ -18,49 +45,50 @@ const STACK = [
   ["Storybook", "#ff4785"],
   ["Node.js", "#5fa04e"],
   ["Rust", "#dea584"],
-  ["Vercel", "ink"],
-  ["Claude Code", "#d97757"],
-  ["Codex", "ink"],
-  ["GitHub", "ink"],
   ["Linear", "#5e6ad2"],
-  ["Notion", "ink"],
 ];
 
-// GitHub linguist colours
+// GitHub linguist colours (React: its brand cyan)
 const LANG_COLOR = {
+  React: "#61dafb",
   TypeScript: "#3178c6",
   JavaScript: "#f1e05a",
-  Python: "#3572a5",
-  XSLT: "#eb8ceb",
-  SQL: "#e38c00", // PL/pgSQL, shown as SQL (linguist's PL/pgSQL blue is too close to Python's)
+  SQL: "#e38c00",
   CSS: "#663399",
-  Dart: "#00b4ab",
-  HTML: "#e34c26",
-  Shell: "#89e051",
 };
 
-const gh = (...args) => JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 1 << 26 }));
+const gh = (...args) => JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 1 << 28 }));
 
 function languages() {
   const totals = {};
   let repos = 0;
   for (const owner of OWNERS) {
-    const list = gh("repo", "list", owner, "--limit", "100", "--json", "name");
-    for (const { name } of list) {
-      const langs = gh("api", `repos/${owner}/${name}/languages`);
-      if (!Object.keys(langs).length) continue;
-      repos++;
-      for (const [raw, bytes] of Object.entries(langs)) {
-        const lang = raw === "PLpgSQL" ? "SQL" : raw;
-        totals[lang] = (totals[lang] ?? 0) + bytes;
+    for (const { name, defaultBranchRef } of gh("repo", "list", owner, "--limit", "100", "--json", "name,defaultBranchRef")) {
+      const full = `${owner}/${name}`;
+      if (SKIP_REPOS.includes(full) || !defaultBranchRef?.name) continue;
+      let tree;
+      try {
+        tree = gh("api", `repos/${full}/git/trees/${defaultBranchRef.name}?recursive=1`);
+      } catch {
+        continue;
       }
+      let counted = false;
+      for (const f of tree.tree) {
+        if (f.type !== "blob" || SKIP_FILES.test(f.path)) continue;
+        const lang = EXT[f.path.split(".").pop().toLowerCase()];
+        if (!lang) continue;
+        totals[lang] = (totals[lang] ?? 0) + f.size;
+        counted = true;
+      }
+      if (counted) repos++;
     }
   }
   const sum = Object.values(totals).reduce((a, b) => a + b, 0);
-  const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
-  const top = sorted.slice(0, 5).map(([name, bytes]) => ({ name, share: bytes / sum }));
-  const rest = sorted.slice(5).reduce((a, [, b]) => a + b, 0) / sum;
-  if (rest > 0) top.push({ name: "Other", share: rest });
+  const top = FEATURED.map((name) => ({ name, share: (totals[name] ?? 0) / sum })).sort((a, b) => b.share - a.share);
+  const rest = Object.entries(totals)
+    .filter(([name]) => !FEATURED.includes(name))
+    .reduce((a, [, b]) => a + b, 0);
+  if (rest > 0) top.push({ name: "Other", share: rest / sum });
   return { top, sum, repos };
 }
 
@@ -96,16 +124,25 @@ const PANEL_Y = 60;
 const PANEL_H = H - PANEL_Y - PAD;
 
 function chips(t) {
-  const out = [];
+  // Lay the chips out in rows first, then centre the rows in the space under the label
+  const placed = [];
   let x = PAD + 16;
-  let y = PANEL_Y + 44;
+  let row = 0;
   const maxX = PAD + LEFT_W - 16;
   for (const [label, color] of STACK) {
     const w = Math.round(textWidth(label) + 34);
     if (x + w > maxX) {
       x = PAD + 16;
-      y += 34;
+      row++;
     }
+    placed.push({ label, color, w, x, row });
+    x += w + 8;
+  }
+  const rowsH = (row + 1) * 34 - 10;
+  const top = PANEL_Y + 36 + (PANEL_H - 36 - rowsH) / 2;
+  const out = [];
+  for (const { label, color, w, x, row } of placed) {
+    const y = Math.round(top + row * 34);
     const dot = color === "ink" ? t.ink : color;
     out.push(
       `<g transform="translate(${x} ${y})">` +
@@ -114,7 +151,6 @@ function chips(t) {
         `<text x="${(w + 12) / 2}" y="16" text-anchor="middle" font-size="12" fill="${t.text}">${label}</text>` +
         `</g>`,
     );
-    x += w + 8;
   }
   return out.join("");
 }
@@ -172,6 +208,73 @@ ${donut(t, data)}
 `;
 }
 
+// ── Contributions: the last year's calendar (GitHub GraphQL, private days included
+// as counts only, like GitHub's own graph), drawn above the stack card — GitHub
+// puts its native graph below the README, so the README carries its own.
+
+const GREENS = {
+  light: ["#eff2f5", "#aceebb", "#4ac26b", "#2da44e", "#116329"],
+  dark: ["#151b23", "#033a16", "#196c2e", "#2ea043", "#56d364"],
+};
+
+function contributions() {
+  const q = "{ viewer { contributionsCollection { contributionCalendar { totalContributions weeks { contributionDays { date weekday contributionCount } } } } } }";
+  const cal = gh("api", "graphql", "-f", `query=${q}`).data.viewer.contributionsCollection.contributionCalendar;
+  const counts = cal.weeks.flatMap((w) => w.contributionDays.map((d) => d.contributionCount)).filter((c) => c > 0).sort((a, b) => a - b);
+  // Four levels by quartile of active days, like GitHub's
+  const cut = [0.25, 0.5, 0.75].map((p) => counts[Math.floor(p * (counts.length - 1))] ?? 1);
+  const level = (c) => (c === 0 ? 0 : c <= cut[0] ? 1 : c <= cut[1] ? 2 : c <= cut[2] ? 3 : 4);
+  return { total: cal.totalContributions, weeks: cal.weeks.map((w) => w.contributionDays.map((d) => ({ ...d, level: level(d.contributionCount) }))) };
+}
+
+const CELL = 11;
+const STEP = 14;
+const CH = 228;
+
+function contributionCard(theme, { total, weeks }) {
+  const t = THEMES[theme];
+  const g = GREENS[theme];
+  const gridX = PAD + 32;
+  const gridY = 84;
+  const cells = [];
+  const months = [];
+  let lastMonth = "";
+  weeks.forEach((days, w) => {
+    const first = days[0];
+    const month = new Date(`${first.date}T00:00:00Z`).toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+    if (month !== lastMonth && w < weeks.length - 2) {
+      if (lastMonth) months.push(`<text x="${gridX + w * STEP}" y="${gridY - 8}" font-size="11" fill="${t.muted}">${month}</text>`);
+      lastMonth = month;
+    }
+    for (const d of days)
+      cells.push(`<rect x="${gridX + w * STEP}" y="${gridY + d.weekday * STEP}" width="${CELL}" height="${CELL}" rx="2" fill="${g[d.level]}"><title>${d.contributionCount} on ${d.date}</title></rect>`);
+  });
+  const dayLabels = [["Mon", 1], ["Wed", 3], ["Fri", 5]]
+    .map(([l, i]) => `<text x="${PAD}" y="${gridY + i * STEP + 9}" font-size="10" fill="${t.muted}">${l}</text>`)
+    .join("");
+  const legendX = W - PAD - 5 * STEP - 64;
+  const legend =
+    `<text x="${legendX}" y="${CH - 22}" font-size="11" fill="${t.faint}">Less</text>` +
+    g.map((c, i) => `<rect x="${legendX + 30 + i * STEP}" y="${CH - 31}" width="${CELL}" height="${CELL}" rx="2" fill="${c}"/>`).join("") +
+    `<text x="${legendX + 30 + 5 * STEP + 4}" y="${CH - 22}" font-size="11" fill="${t.faint}">More</text>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${CH}" viewBox="0 0 ${W} ${CH}" font-family="${FONT}" role="img" aria-label="${total} contributions in the last year">
+<rect x="0.5" y="0.5" width="${W - 1}" height="${CH - 1}" rx="12" fill="${t.bg}" stroke="${t.border}"/>
+<g fill="none" stroke="${t.muted}" stroke-width="1.5" stroke-linecap="round" transform="translate(${PAD} 22)"><path d="M2 14V9M6 14V4M10 14V7M14 14V2"/></g>
+<text x="${PAD + 24}" y="35" font-size="14" font-weight="600" fill="${t.text}">Contributions</text>
+<text x="${W - PAD}" y="35" font-size="12" fill="${t.muted}" text-anchor="end"><tspan font-weight="600" fill="${t.text}">${total.toLocaleString("en-US")}</tspan> in the last year</text>
+${months.join("")}
+${dayLabels}
+${cells.join("")}
+<text x="${PAD}" y="${CH - 22}" font-size="11" fill="${t.faint}">Last ${weeks.length} weeks of activity</text>
+${legend}
+</svg>
+`;
+}
+
 const data = languages();
 for (const theme of ["light", "dark"]) writeFileSync(`stack-${theme}.svg`, card(theme, data));
 console.log(`${data.repos} repos, ${(data.sum / 1e6).toFixed(1)} MB:`, data.top.map((l) => `${l.name} ${(l.share * 100).toFixed(1)}%`).join(", "));
+
+const contrib = contributions();
+for (const theme of ["light", "dark"]) writeFileSync(`contributions-${theme}.svg`, contributionCard(theme, contrib));
+console.log(`${contrib.total} contributions, ${contrib.weeks.length} weeks`);
