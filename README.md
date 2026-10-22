@@ -12,5 +12,5 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./stack-dark.svg">
-  <img alt="Tech stack: TypeScript, React, Next.js, Tailwind CSS, CSS, Figma, Storybook, Node.js, Rust, Vercel, Claude Code, Codex, GitHub, Linear, Notion. Languages across my repos, mostly TypeScript." src="./stack-light.svg" width="100%">
+  <img alt="Tech stack: TypeScript, React, Next.js, Tailwind CSS, CSS, Figma, Storybook, Node.js, Rust, Linear" src="./stack-light.svg" width="100%">
 </picture>
