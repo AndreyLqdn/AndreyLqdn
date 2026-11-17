@@ -1,4 +1,4 @@
 - 👋 Hi, I'm Andrey ([@AndreyLqdn](https://github.com/AndreyLqdn))
-- Design engineer, co-founder & CEO at [@weAltura](https://github.com/weAltura)
+- Design engineer, Founder of [@weAltura](https://github.com/weAltura) and Polsiu.design
 - Prev: Design Engineer at [Vallora AI](https://app.vallora.dk/login)
 - [andreycr.xyz](https://andreycr.xyz) · [ask me anything](https://andreycr.xyz/ask)
